@@ -48,3 +48,8 @@ Final Project Submission - Dec. 11
 * Prepare for the presentation.
 
 #endif
+
+## Reference
+[Neural Radiance Fields](https://www.matthewtancik.com/nerf)
+[LB-NERF](https://ieeexplore.ieee.org/document/9897642)
+[Eikonal Fields for Refractive Novel-View Synthesis](https://dl.acm.org/doi/abs/10.1145/3528233.3530706)
