@@ -1,0 +1,35 @@
+{
+	"encoding": {
+		"otype": "Frequency",
+		"n_frequencies": 16
+	},
+	"dir_encoding": {
+		"otype": "Composite",
+		"nested": [
+			{
+				"n_dims_to_encode": 3,
+				"otype": "SphericalHarmonics",
+				"degree": 4
+			},
+			{
+				"otype": "Identity",
+				"n_bins": 4,
+				"degree": 4
+			}
+		]
+	},
+	"network": {
+		"otype": "CutlassMLP",
+		"activation": "ReLU",
+		"output_activation": "None",
+		"n_neurons": 256,
+		"n_hidden_layers": 7
+	},
+	"rgb_network": {
+		"otype": "CutlassMLP",
+		"activation": "ReLU",
+		"output_activation": "None",
+		"n_neurons": 256,
+		"n_hidden_layers": 1
+	}
+}

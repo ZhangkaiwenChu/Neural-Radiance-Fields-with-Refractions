@@ -23,7 +23,7 @@ def config_parser():
     # training options
     parser.add_argument("--netdepth", type=int, default=8, 
                         help='layers in network')
-    parser.add_argument("--netwidth", type=int, default=64, 
+    parser.add_argument("--netwidth", type=int, default=256, 
                         help='channels per layer')
     parser.add_argument("--netdepth_fine", type=int, default=8, 
                         help='layers in fine network')
@@ -31,7 +31,7 @@ def config_parser():
                         help='channels per layer in fine network')
     parser.add_argument("--N_rand", type=int, default=32*32*4, 
                         help='batch size (number of random rays per gradient step)')
-    parser.add_argument("--lrate", type=float, default=1e-2, 
+    parser.add_argument("--lrate", type=float, default=0.0005, 
                         help='learning rate')
     parser.add_argument("--lrate_decay", type=int, default=250, 
                         help='exponential learning rate decay (in 1000 steps)')
@@ -106,7 +106,7 @@ def config_parser():
                         help='will take every 1/N images as LLFF test set, paper uses 8')
 
     # logging/saving options
-    parser.add_argument("--i_print",   type=int, default=10000, 
+    parser.add_argument("--i_print",   type=int, default=1000, 
                         help='frequency of console printout and metric loggin')
     parser.add_argument("--i_img",     type=int, default=500, 
                         help='frequency of tensorboard image logging')
@@ -117,7 +117,7 @@ def config_parser():
     parser.add_argument("--i_video",   type=int, default=50000, 
                         help='frequency of render_poses video saving')
     
-    parser.add_argument("--nnconfig", type=str, default="./configs/config_hash.json", help="JSON config for tiny-cuda-nn")
+    parser.add_argument("--nnconfig", type=str, default="./configs/config.json", help="JSON config for tiny-cuda-nn")
 
     return parser
 
@@ -159,3 +159,48 @@ def ndc_rays(H, W, focal, near, rays_o, rays_d):
     rays_d = torch.stack([d0,d1,d2], -1)
     
     return rays_o, rays_d
+
+def sample_pdf(bins, weights, N_samples, det=False, pytest=False):
+    # Get pdf
+    weights = weights + 1e-5 # prevent nans
+    pdf = weights / torch.sum(weights, -1, keepdim=True)
+    cdf = torch.cumsum(pdf, -1)
+    cdf = torch.cat([torch.zeros_like(cdf[...,:1]), cdf], -1)  # (batch, len(bins))
+
+    # Take uniform samples
+    if det:
+        u = torch.linspace(0., 1., steps=N_samples)
+        u = u.expand(list(cdf.shape[:-1]) + [N_samples])
+    else:
+        u = torch.rand(list(cdf.shape[:-1]) + [N_samples])
+
+    # Pytest, overwrite u with numpy's fixed random numbers
+    if pytest:
+        np.random.seed(0)
+        new_shape = list(cdf.shape[:-1]) + [N_samples]
+        if det:
+            u = np.linspace(0., 1., N_samples)
+            u = np.broadcast_to(u, new_shape)
+        else:
+            u = np.random.rand(*new_shape)
+        u = torch.Tensor(u)
+
+    # Invert CDF
+    u = u.contiguous()
+    inds = torch.searchsorted(cdf, u, right=True)
+    below = torch.max(torch.zeros_like(inds-1), inds-1)
+    above = torch.min((cdf.shape[-1]-1) * torch.ones_like(inds), inds)
+    inds_g = torch.stack([below, above], -1)  # (batch, N_samples, 2)
+
+    # cdf_g = tf.gather(cdf, inds_g, axis=-1, batch_dims=len(inds_g.shape)-2)
+    # bins_g = tf.gather(bins, inds_g, axis=-1, batch_dims=len(inds_g.shape)-2)
+    matched_shape = [inds_g.shape[0], inds_g.shape[1], cdf.shape[-1]]
+    cdf_g = torch.gather(cdf.unsqueeze(1).expand(matched_shape), 2, inds_g)
+    bins_g = torch.gather(bins.unsqueeze(1).expand(matched_shape), 2, inds_g)
+
+    denom = (cdf_g[...,1]-cdf_g[...,0])
+    denom = torch.where(denom<1e-5, torch.ones_like(denom), denom)
+    t = (u-cdf_g[...,0])/denom
+    samples = bins_g[...,0] + t * (bins_g[...,1]-bins_g[...,0])
+
+    return samples

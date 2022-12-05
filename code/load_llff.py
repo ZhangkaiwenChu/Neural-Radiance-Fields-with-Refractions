@@ -25,7 +25,6 @@ def _minify(basedir, factors=[], resolutions=[]):
     imgs = [os.path.join(imgdir, f) for f in sorted(os.listdir(imgdir))]
     imgs = [f for f in imgs if any([f.endswith(ex) for ex in ['JPG', 'jpg', 'png', 'jpeg', 'PNG']])]
     imgdir_orig = imgdir
-    
     wd = os.getcwd()
 
     for r in factors + resolutions:
@@ -42,7 +41,7 @@ def _minify(basedir, factors=[], resolutions=[]):
         print('Minifying', r, basedir)
         
         os.makedirs(imgdir)
-        check_output('cp {}/* {}'.format(imgdir_orig, imgdir), shell=True)
+        check_output('copy {}\* {}'.format(imgdir_orig, imgdir), shell=True)
         
         ext = imgs[0].split('.')[-1]
         args = ' '.join(['mogrify', '-resize', resizearg, '-format', 'png', '*.{}'.format(ext)])
@@ -52,7 +51,7 @@ def _minify(basedir, factors=[], resolutions=[]):
         os.chdir(wd)
         
         if ext != 'png':
-            check_output('rm {}/*.{}'.format(imgdir, ext), shell=True)
+            check_output('del {}\*.{}'.format(imgdir, ext), shell=True)
             print('Removed duplicates')
         print('Done')
             
@@ -62,8 +61,6 @@ def _minify(basedir, factors=[], resolutions=[]):
 def _load_data(basedir, factor=None, width=None, height=None, load_imgs=True):
     
     poses_arr = np.load(os.path.join(basedir, 'poses_bounds.npy'))
-
-
     poses = poses_arr[:, :-2].reshape([-1, 3, 5]).transpose([1,2,0])
     bds = poses_arr[:, -2:].transpose([1,0])
     
@@ -73,7 +70,7 @@ def _load_data(basedir, factor=None, width=None, height=None, load_imgs=True):
     
     sfx = ''
     
-    if factor is not None:
+    if factor is not None and factor != 1:
         sfx = '_{}'.format(factor)
         _minify(basedir, factors=[factor])
         factor = factor
@@ -96,9 +93,9 @@ def _load_data(basedir, factor=None, width=None, height=None, load_imgs=True):
         return
     
     imgfiles = [os.path.join(imgdir, f) for f in sorted(os.listdir(imgdir)) if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')]
-    if poses.shape[-1] != len(imgfiles):
-        print( 'Mismatch between imgs {} and poses {} !!!!'.format(len(imgfiles), poses.shape[-1]) )
-        return
+    # if poses.shape[-1] != len(imgfiles):
+        # print( 'Mismatch between imgs {} and poses {} !!!!'.format(len(imgfiles), poses.shape[-1]) )
+        # return
     
     sh = imageio.imread(imgfiles[0]).shape
     poses[:2, 4, :] = np.array(sh[:2]).reshape([2, 1])
@@ -242,7 +239,66 @@ def spherify_poses(poses, bds):
     return poses_reset, new_poses, bds
     
 
-def load_llff_data(basedir, factor=8, recenter=True, bd_factor=.75, spherify=False, path_zflat=False):
+def register_video_path(basedir,factor,poses,scale):
+   
+        poses_video, bds, imgs = _load_data(basedir, factor=factor) # factor=8 downsamples original imgs by 8x
+        poses_video = np.concatenate([poses_video[:, 1:2, :], -poses_video[:, 0:1, :], poses_video[:, 2:, :]], 1)
+        poses_video = np.moveaxis(poses_video, -1, 0).astype(np.float32)
+        # poses_video = poses_video[84:]
+        poses_video[:,:3,3] *= scale
+
+        poses_ = poses_video+0
+        bottom = np.reshape([0,0,0,1.], [1,4])
+        c2w = poses_avg(poses)
+        c2w = np.concatenate([c2w[:3,:4], bottom], -2)
+        bottom = np.tile(np.reshape(bottom, [1,1,4]), [poses_video.shape[0],1,1])
+        poses_video = np.concatenate([poses_video[:,:3,:4], bottom], -2)
+    
+        poses_video = np.linalg.inv(c2w) @ poses_video
+        poses_[:,:3,:4] = poses_video[:,:3,:4]
+        poses_video = poses_
+
+        poses = recenter_poses(poses)
+
+        p34_to_44 = lambda p : np.concatenate([p, np.tile(np.reshape(np.eye(4)[-1,:], [1,1,4]), [p.shape[0], 1,1])], 1)
+        
+        rays_d = poses[:,:3,2:3]
+        rays_o = poses[:,:3,3:4]
+    
+        def min_line_dist(rays_o, rays_d):
+            A_i = np.eye(3) - rays_d * np.transpose(rays_d, [0,2,1])
+            b_i = -A_i @ rays_o
+            pt_mindist = np.squeeze(-np.linalg.inv((np.transpose(A_i, [0,2,1]) @ A_i).mean(0)) @ (b_i).mean(0))
+            return pt_mindist
+    
+        pt_mindist = min_line_dist(rays_o, rays_d)
+        
+        center = pt_mindist
+        up = (poses[:,:3,3] - center).mean(0)
+    
+        vec0 = normalize(up)
+        vec1 = normalize(np.cross([.1,.2,.3], vec0))
+        vec2 = normalize(np.cross(vec0, vec1))
+        pos = center
+        c2w = np.stack([vec1, vec2, vec0, pos], 1)
+    
+        poses_reset = np.linalg.inv(p34_to_44(c2w[None])) @ p34_to_44(poses_video[:,:3,:4])
+    
+        poses_reset_ = np.linalg.inv(p34_to_44(c2w[None])) @ p34_to_44(poses[:,:3,:4])
+
+        rad = np.sqrt(np.mean(np.sum(np.square(poses_reset_[:,:3,3]), -1)))
+        
+        sc = 1./rad
+        poses_reset[:,:3,3] *= sc
+        poses_reset = np.concatenate([poses_reset[:,:3,:4], np.broadcast_to(poses_video[0,:3,-1:], poses_reset[:,:3,-1:].shape)], -1)
+
+        poses_reset = poses_reset.astype(np.float32)
+
+        
+        return poses_reset
+
+
+def load_llff_data(basedir, factor=8, recenter=True, bd_factor=.75, spherify=False, path_video=None, path_zflat=False):
     
 
     poses, bds, imgs = _load_data(basedir, factor=factor) # factor=8 downsamples original imgs by 8x
@@ -256,9 +312,16 @@ def load_llff_data(basedir, factor=8, recenter=True, bd_factor=.75, spherify=Fal
     bds = np.moveaxis(bds, -1, 0).astype(np.float32)
     
     # Rescale if bd_factor is provided
-    sc = 1. if bd_factor is None else 1./(bds.min() * bd_factor)
+    # sc = 1. if bd_factor is None else 1./(bds.min() * bd_factor)
+    sc = 1./(bds.max() - bds.min())
+    print(sc)
     poses[:,:3,3] *= sc
     bds *= sc
+    print('Loaded', basedir, bds.min(), bds.max())
+
+    if path_video is not None:
+        render_path = register_video_path(path_video,factor,poses,sc)
+        
     
     if recenter:
         poses = recenter_poses(poses)
@@ -314,8 +377,12 @@ def load_llff_data(basedir, factor=8, recenter=True, bd_factor=.75, spherify=Fal
     
     images = images.astype(np.float32)
     poses = poses.astype(np.float32)
+    
+    if path_video is  None:
+        render_path = render_poses
 
-    return images, poses, bds, render_poses, i_test
+    
+    return images, poses, bds, render_path, i_test
 
 
 
