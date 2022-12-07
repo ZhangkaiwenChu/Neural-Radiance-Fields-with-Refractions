@@ -20,4 +20,4 @@ The pytorch implemententation locates in the code direcctory, ended with .ipynb.
 For c++ implementation, we are using the architecture of [instant-npg](https://github.com/NVlabs/instant-ngp), please refer to this page for details. 
 
 ## Results
-![](documents/video/Ball_spiral_200000_rgb.mp4)
+![](documents/video/ball.gif)
