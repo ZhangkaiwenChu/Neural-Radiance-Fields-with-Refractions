@@ -39,9 +39,14 @@ For C++ implementation, I based my code on [instant-npg](https://github.com/NVla
 
 ## Usage
 The pytorch implemententation locates in the code direcctory, ended with .ipynb.
+INSTANT-NeRF.ipynb is a code that mainly build from scratch, and IB-NeRF.ipynb and NeRF.ipynb are mainly based on [pytorch-nerf](https://github.com/yenchenlin/nerf-pytorch).
 For c++ implementation, we are using the architecture of [instant-npg](https://github.com/NVlabs/instant-ngp), please refer to this page for details. 
 
 ## Reference
 [instant-ngp](https://github.com/NVlabs/instant-ngp)
+
 [tiny-cuda-nn](https://github.com/NVlabs/tiny-cuda-nn)
+
 [IB-NeRF](https://ieeexplore.ieee.org/document/9897642)
+
+[pytorch-nerf](https://github.com/yenchenlin/nerf-pytorch)
