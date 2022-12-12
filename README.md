@@ -33,6 +33,9 @@ We first pass the position and direction to the offset network, then we add the 
 
 Due to a slightly offset of the rendered image, the psnr is low. We can find that for the overall quality, nerf is better. But for the glass ball, lb-nerf is better.
 
+## C++ Implementation
+
+For C++ implementation, I based my code on [instant-npg](https://github.com/NVlabs/instant-ngp). I only modified the network architecture, which locates at instant-ngp/include/neural-graphics-primitives/nerf_network.h. However, due to a different choice of encoding, the model do not converge, and it cannot output reasonable images. 
 
 ## Usage
 The pytorch implemententation locates in the code direcctory, ended with .ipynb.
